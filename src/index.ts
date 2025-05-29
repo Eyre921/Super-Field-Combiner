@@ -1,136 +1,240 @@
-import { basekit, FieldType, field, FieldComponent, FieldCode, NumberFormatter, AuthorizationType } from '@lark-opdev/block-basekit-server-api';
+import { basekit, FieldType, field, FieldComponent, FieldCode } from '@lark-opdev/block-basekit-server-api';
 const { t } = field;
-
-// 通过addDomainList添加请求接口的域名
-basekit.addDomainList(['api.exchangerate-api.com']);
 
 basekit.addField({
   // 定义捷径的i18n语言资源
   i18n: {
     messages: {
       'zh-CN': {
-        'rmb': '人民币金额',
-        'usd': '美元金额',
-        'rate': '汇率',
+        'fieldsLabel': '选择要拼接的字段',
+        'separatorLabel': '拼接符',
+        'separatorPlaceholder': '输入拼接符,留空则默认换行',
+        'resultTitle': '拼接结果',
+        'newline': '换行',
+        'comma': '逗号',
+        'space': '空格',
+        'semicolon': '分号',
+        'pipe': '管道符',
+        'custom': '自定义',
       },
       'en-US': {
-        'rmb': 'RMB Amount',
-        'usd': 'Dollar amount',
-        'rate': 'Exchange Rate',
-      },
-      'ja-JP': {
-        'rmb': '人民元の金額',
-        'usd': 'ドル金額',
-        'rate': '為替レート',
+        'fieldsLabel': 'Select fields to concatenate',
+        'separatorLabel': 'Separator',
+        'separatorPlaceholder': 'Enter separator, leave empty for newline',
+        'resultTitle': 'Concatenated Result',
+        'newline': 'Newline',
+        'comma': 'Comma',
+        'space': 'Space',
+        'semicolon': 'Semicolon',
+        'pipe': 'Pipe',
+        'custom': 'Custom',
       },
     }
   },
   // 定义捷径的入参
   formItems: [
     {
-      key: 'account',
-      label: t('rmb'),
+      key: 'fields',
+      label: t('fieldsLabel'),
       component: FieldComponent.FieldSelect,
       props: {
-        supportType: [FieldType.Number],
+        mode: 'multiple', // 支持多选
+        supportType: [
+          FieldType.Text,
+          FieldType.Number,
+          FieldType.SingleSelect,
+          FieldType.MultiSelect,
+          FieldType.Url,
+          FieldType.DateTime,
+      ],
       },
       validator: {
         required: true,
       }
-    },
-  ],
-  // 定义捷径的返回结果类型
-  resultType: {
-    type: FieldType.Object,
-    extra: {
-      icon: {
-        light: 'https://lf3-static.bytednsdoc.com/obj/eden-cn/eqgeh7upeubqnulog/chatbot.svg',
+},
+    {
+      key: 'separatorType',
+      label: t('separatorLabel'),
+      component: FieldComponent.Radio,
+      props: {
+        options: [
+          { label: t('newline'), value: 'newline' },
+          { label: t('comma'), value: 'comma' },
+          { label: t('space'), value: 'space' },
+          { label: t('semicolon'), value: 'semicolon' },
+          { label: t('pipe'), value: 'pipe' },
+          { label: t('custom'), value: 'custom' },
+      ]
       },
-      properties: [
-        {
-          key: 'id',
-          isGroupByKey: true,
-          type: FieldType.Text,
-          title: 'id',
-          hidden: true,
-        },
-        {
-          key: 'usd',
-          type: FieldType.Number,
-          title: t('usd'),
-          primary: true,
-          extra: {
-            formatter: NumberFormatter.DIGITAL_ROUNDED_2,
-          }
-        },
-        {
-          key: 'rate',
-          type: FieldType.Number,
-          title: t('rate'),
-          extra: {
-            formatter: NumberFormatter.DIGITAL_ROUNDED_4,
-          }
-        },
-      ],
     },
-  },
-  // formItemParams 为运行时传入的字段参数，对应字段配置里的 formItems （如引用的依赖字段）
-  execute: async (formItemParams: { account: number }, context) => {
-    const { account = 0 } = formItemParams;
-    /** 为方便查看日志，使用此方法替代console.log */
-    function debugLog(arg: any) {
-      // @ts-ignore
-      console.log(JSON.stringify({
-        formItemParams,
-        context,
-        arg
-      }))
-    }
-    try {
-      const res:any = await context.fetch('https://api.exchangerate-api.com/v4/latest/CNY', { // 已经在addDomainList中添加为白名单的请求
-        method: 'GET',
-      }).then(res => res.json());
-      const usdRate = res?.rates?.['USD'];
+    {
+      key: 'customSeparator',
+      label: t('custom'),
+      component: FieldComponent.Input,
+      props: {
+        placeholder: t('separatorPlaceholder'),
+      },
+    },
+],
+// 定义捷径的返回结果类型为多行文本
+resultType: {
+  type: FieldType.Text,
+},
+// formItemParams 为运行时传入的字段参数,对应字段配置里的 formItems
+execute: async (formItemParams: {
+  fields: any[],
+  separatorType: { label: string, value: string },
+  customSeparator: string
+}, context) => {
+  const { fields = [], separatorType, customSeparator = '' } = formItemParams;
 
-      // 请避免使用 debugLog(res) 这类方式输出日志，因为所查到的日志是没有顺序的，为方便排查错误，对每个log进行手动标记顺序
-      debugLog({
-        '===1 接口返回结果': res
-      });
+  /** 为方便查看日志,使用此方法替代console.log */
+  function debugLog(arg: any) {
+    // @ts-ignore
+    console.log(JSON.stringify({
+      formItemParams,
+      context,
+      arg
+    }))
+  }
 
-      return {
-        code: FieldCode.Success,
-        data: {
-          id: `${Math.random()}`,
-          usd: parseFloat((account * usdRate).toFixed(4)),
-          rate: usdRate,
-        }
-      }
+  try {
+    debugLog({
+      '===1 开始处理字段拼接': { fieldsCount: fields.length, separatorType, customSeparator }
+    });
 
-      /*
-        如果错误原因明确，想要向使用者传递信息，要避免直接报错，可将错误信息当作成功结果返回：
-
-      return {
-        code: FieldCode.Success,
-        data: {
-          id: `具体错误原因`,
-          usd: 0,
-          rate: 0,
-        }
-      }
-
-      */
-    } catch (e) {
-      console.log('====error', String(e));
-      debugLog({
-        '===999 异常错误': String(e)
-      });
-      /** 返回非 Success 的错误码，将会在单元格上显示报错，请勿返回msg、message之类的字段，它们并不会起作用。
-       * 对于未知错误，请直接返回 FieldCode.Error，然后通过查日志来排查错误原因。
-       */
+    if (!fields || fields.length === 0) {
       return {
         code: FieldCode.Error,
       }
     }
-  },
+
+    // 确定分隔符
+    let separator = '\n'; // 默认换行
+    if (separatorType && separatorType.value) {
+      switch (separatorType.value) {
+        case 'newline':
+          separator = '\n';
+          break;
+        case 'comma':
+          separator = ',';
+          break;
+        case 'space':
+          separator = ' ';
+          break;
+        case 'semicolon':
+          separator = ';';
+          break;
+        case 'pipe':
+          separator = '|';
+          break;
+        case 'custom':
+          separator = customSeparator || '\n';
+          break;
+        default:
+          separator = '\n';
+      }
+    }
+
+    debugLog({
+      '===2 确定分隔符': separator
+    });
+
+    // 处理每个字段的值并转换为字符串
+    const processedValues: string[] = [];
+
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i];
+      let fieldValue = '';
+
+      if (field === null || field === undefined) {
+        fieldValue = '';
+      } else if (typeof field === 'string') {
+        fieldValue = field;
+      } else if (typeof field === 'number') {
+        fieldValue = field.toString();
+      } else if (typeof field === 'boolean') {
+        fieldValue = field ? 'true' : 'false';
+      } else if (Array.isArray(field)) {
+        // 处理数组类型（如文本字段的富文本、多选字段等）
+        if (field.length > 0) {
+          if (typeof field[0] === 'string') {
+            // 多选字段
+            fieldValue = field.join(', ');
+          } else if (field[0] && typeof field[0] === 'object') {
+            // 文本字段的富文本格式
+            fieldValue = field.map(item => {
+              if (item.type === 'text') {
+                return item.text || '';
+              } else if (item.type === 'url') {
+                return item.text || item.link || '';
+              } else if (item.type === 'mention') {
+                return item.text || item.name || '';
+              } else {
+                return item.text || item.toString();
+              }
+            }).join('');
+          } else {
+            fieldValue = field.join(', ');
+          }
+        }
+      } else if (typeof field === 'object') {
+        // 处理对象类型
+        if (field.link && field.title) {
+          // URL字段
+          fieldValue = field.title || field.link;
+        } else if (field.text) {
+          fieldValue = field.text;
+        } else if (field.name) {
+          fieldValue = field.name;
+        } else {
+          // 尝试获取对象的字符串表示
+          fieldValue = JSON.stringify(field);
+        }
+      } else {
+        fieldValue = field.toString();
+      }
+
+      // 只添加非空值
+      if (fieldValue.trim()) {
+        processedValues.push(fieldValue.trim());
+      }
+    }
+
+    debugLog({
+      '===3 处理后的值': { valuesCount: processedValues.length }
+    });
+
+    // 拼接所有值
+    const result = processedValues.join(separator);
+
+    debugLog({
+      '===4 拼接完成': { resultLength: result.length }
+    });
+
+    // 检查结果长度,支持大量字符但给出警告
+    if (result.length > 100000) {
+      debugLog({
+        '===5 警告': '结果超过10万字符,可能影响性能'
+      });
+    }
+
+    return {
+      code: FieldCode.Success,
+      data: result,
+    }
+
+  } catch (e) {
+    console.log('====error', String(e));
+    debugLog({
+      '===999 异常错误': String(e)
+    });
+
+    return {
+      code: FieldCode.Error,
+    }
+  }
+},
 });
+
 export default basekit;
