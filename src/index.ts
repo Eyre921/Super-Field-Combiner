@@ -8,7 +8,7 @@ basekit.addField({
       'zh-CN': {
         'fieldsLabel': '选择要拼接的字段',
         'separatorLabel': '字段间连接符',
-        'separatorPlaceholder': '输入字段间的连接符,留空则默认换行',
+        'separatorPlaceholder': '输入字段间的连接符，留空则默认换行',
         'totalPrefixLabel': '总前缀',
         'totalPrefixPlaceholder': '在拼接结果前添加的标题文字（可选）',
         'totalSuffixLabel': '总后缀',
@@ -17,7 +17,7 @@ basekit.addField({
         'betweenTextLabel': '字段间插入文字',
         'betweenTextPlaceholder': '在每两个字段值之间插入的文字（可选）',
         'fieldPrefixesLabel': '每个字段的前缀',
-        'fieldPrefixesPlaceholder': '为每个字段添加前缀,用|分隔,如：姓名|年龄|部门',
+        'fieldPrefixesPlaceholder': '为每个字段添加前缀，用|分隔，如：姓名|年龄|部门',
         'fieldHeaderLevelLabel': '字段前缀标题等级',
         'resultTitle': '拼接结果',
         'newline': '换行',
@@ -78,6 +78,7 @@ basekit.addField({
           FieldType.MultiSelect,
           FieldType.Url,
           FieldType.DateTime,
+          FieldType.Checkbox,
         ],
       },
       validator: {
@@ -140,11 +141,11 @@ basekit.addField({
       tooltips: [
         {
           type: 'text',
-          content: '为每个字段添加前缀文字,按字段选择顺序用"|"分隔.例如：第一个字段前缀|第二个字段前缀|第三个字段前缀'
+          content: '为每个字段添加前缀文字，按字段选择顺序用"|"分隔。例如：第一个字段前缀|第二个字段前缀|第三个字段前缀'
         },
         {
           type: 'text',
-          content: '如果某个字段不需要前缀,可以留空,如：姓名||部门（中间的年龄字段无前缀）'
+          content: '如果某个字段不需要前缀，可以留空，如：姓名||部门（中间的年龄字段无前缀）'
         }
       ],
     },
@@ -181,7 +182,7 @@ basekit.addField({
       tooltips: [
         {
           type: 'text',
-          content: '在每两个字段值之间插入的文字,会与连接符一起使用'
+          content: '在每两个字段值之间插入的文字，会与连接符一起使用'
         }
       ],
     },
@@ -190,7 +191,7 @@ basekit.addField({
   resultType: {
     type: FieldType.Text,
   },
-  // formItemParams 为运行时传入的字段参数,对应字段配置里的 formItems
+  // formItemParams 为运行时传入的字段参数，对应字段配置里的 formItems
   execute: async (formItemParams: {
     fields: any[],
     separatorType: { label: string, value: string },
@@ -214,7 +215,7 @@ basekit.addField({
       fieldHeaderLevel
     } = formItemParams;
 
-    /** 为方便查看日志,使用此方法替代console.log */
+    /** 为方便查看日志，使用此方法替代console.log */
     function debugLog(arg: any) {
       // @ts-ignore
       console.log(JSON.stringify({
@@ -248,6 +249,97 @@ basekit.addField({
       }
     }
 
+    // 改进的字段值处理函数
+    function processFieldValue(field: any): string {
+      debugLog({
+        '处理字段值': { field, type: typeof field, isArray: Array.isArray(field) }
+      });
+
+      if (field === null || field === undefined) {
+        return '';
+      }
+
+      if (typeof field === 'string') {
+        return field;
+      }
+
+      if (typeof field === 'number') {
+        return field.toString();
+      }
+
+      if (typeof field === 'boolean') {
+        return field ? '是' : '否';
+      }
+
+      if (Array.isArray(field)) {
+        if (field.length === 0) {
+          return '';
+        }
+
+        // 处理富文本字段
+        if (field[0] && typeof field[0] === 'object' && field[0].type) {
+          return field.map(item => {
+            if (item.type === 'text') {
+              return item.text || '';
+            } else if (item.type === 'url') {
+              return item.text || item.link || '';
+            } else if (item.type === 'mention') {
+              return item.text || item.name || '';
+            } else {
+              return item.text || JSON.stringify(item);
+            }
+          }).join('');
+        }
+
+        // 处理多选字段或其他数组
+        return field.map(item => {
+          if (typeof item === 'string') {
+            return item;
+          } else if (item && typeof item === 'object') {
+            return item.name || item.text || item.label || JSON.stringify(item);
+          } else {
+            return String(item);
+          }
+        }).join(', ');
+      }
+
+      if (typeof field === 'object') {
+        // URL字段
+        if (field.link) {
+          return field.title || field.text || field.link;
+        }
+
+        // 单选字段
+        if (field.name) {
+          return field.name;
+        }
+
+        // 日期字段（时间戳）
+        if (field.timestamp || typeof field === 'number') {
+          const timestamp = field.timestamp || field;
+          try {
+            return new Date(timestamp).toLocaleString('zh-CN');
+          } catch (e) {
+            return String(timestamp);
+          }
+        }
+
+        // 其他对象类型
+        if (field.text) {
+          return field.text;
+        }
+
+        // 最后尝试JSON序列化
+        try {
+          return JSON.stringify(field);
+        } catch (e) {
+          return String(field);
+        }
+      }
+
+      return String(field);
+    }
+
     try {
       debugLog({
         '===1 开始处理字段拼接': {
@@ -259,7 +351,8 @@ basekit.addField({
           totalSuffixText,
           fieldPrefixes,
           totalHeaderLevel,
-          fieldHeaderLevel
+          fieldHeaderLevel,
+          fieldsDetail: fields
         }
       });
 
@@ -319,55 +412,15 @@ basekit.addField({
 
       for (let i = 0; i < fields.length; i++) {
         const field = fields[i];
-        let fieldValue = '';
+        const fieldValue = processFieldValue(field);
 
-        if (field === null || field === undefined) {
-          fieldValue = '';
-        } else if (typeof field === 'string') {
-          fieldValue = field;
-        } else if (typeof field === 'number') {
-          fieldValue = field.toString();
-        } else if (typeof field === 'boolean') {
-          fieldValue = field ? 'true' : 'false';
-        } else if (Array.isArray(field)) {
-          // 处理数组类型（如文本字段的富文本、多选字段等）
-          if (field.length > 0) {
-            if (typeof field[0] === 'string') {
-              // 多选字段
-              fieldValue = field.join(', ');
-            } else if (field[0] && typeof field[0] === 'object') {
-              // 文本字段的富文本格式
-              fieldValue = field.map(item => {
-                if (item.type === 'text') {
-                  return item.text || '';
-                } else if (item.type === 'url') {
-                  return item.text || item.link || '';
-                } else if (item.type === 'mention') {
-                  return item.text || item.name || '';
-                } else {
-                  return item.text || item.toString();
-                }
-              }).join('');
-            } else {
-              fieldValue = field.join(', ');
-            }
+        debugLog({
+          [`===3.${i} 处理字段${i}`]: {
+            originalField: field,
+            processedValue: fieldValue,
+            isEmpty: !fieldValue.trim()
           }
-        } else if (typeof field === 'object') {
-          // 处理对象类型
-          if (field.link && field.title) {
-            // URL字段
-            fieldValue = field.title || field.link;
-          } else if (field.text) {
-            fieldValue = field.text;
-          } else if (field.name) {
-            fieldValue = field.name;
-          } else {
-            // 尝试获取对象的字符串表示
-            fieldValue = JSON.stringify(field);
-          }
-        } else {
-          fieldValue = field.toString();
-        }
+        });
 
         // 只处理非空值
         if (fieldValue.trim()) {
@@ -376,10 +429,10 @@ basekit.addField({
           let finalFieldValue = '';
 
           if (fieldPrefix) {
-            // 如果有字段前缀,将其格式化为Markdown标题,只在标题后加一个换行符
+            // 如果有字段前缀，将其格式化为Markdown标题
             finalFieldValue = `${fieldMarkdownPrefix} "${fieldPrefix}"\n${fieldValue.trim()}`;
           } else {
-            // 如果没有字段前缀,直接使用字段值
+            // 如果没有字段前缀，直接使用字段值
             finalFieldValue = fieldValue.trim();
           }
 
@@ -388,8 +441,16 @@ basekit.addField({
       }
 
       debugLog({
-        '===3 处理后的值': { valuesCount: processedValues.length, processedValues }
+        '===4 处理后的值': { valuesCount: processedValues.length, processedValues }
       });
+
+      // 如果没有有效的字段值，返回空结果
+      if (processedValues.length === 0) {
+        return {
+          code: FieldCode.Success,
+          data: '',
+        }
+      }
 
       // 拼接所有值
       let result = processedValues.join(finalSeparator);
@@ -405,13 +466,13 @@ basekit.addField({
       }
 
       debugLog({
-        '===4 拼接完成': { resultLength: result.length }
+        '===5 拼接完成': { resultLength: result.length, finalResult: result }
       });
 
-      // 检查结果长度,支持大量字符但给出警告
+      // 检查结果长度，支持大量字符但给出警告
       if (result.length > 100000) {
         debugLog({
-          '===5 警告': '结果超过10万字符,可能影响性能'
+          '===6 警告': '结果超过10万字符，可能影响性能'
         });
       }
 
